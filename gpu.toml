@@ -5,12 +5,18 @@ cpu = 1
 memory_mib = 4096
 timeout_seconds = 600               # workload budget, excluding image build/startup
 startup_timeout_seconds = 600
+shutdown_grace_seconds = 60         # time for SIGINT handlers/finally to save checkpoints
 cache_volume = "portable-gpu-starter-cache"
 artifact_volume = "portable-gpu-starter-artifacts"
 
 [image]
 python_version = "3.11"
 apt_packages = ["git"]
+
+[environment]
+# Workload-only variables; all values must be strings. No local variables are forwarded.
+TOKENIZERS_PARALLELISM = "false"
+# MY_SETTING = "example value"
 
 [sync]
 project_dir = "src"             # only this named folder is scanned
@@ -20,4 +26,5 @@ max_upload_files = 1024
 max_upload_mib = 64
 
 [workload]
+terminal = true                    # PTY output for live tqdm/terminal progress
 command = ["python", "demo.py", "--require-cuda"]

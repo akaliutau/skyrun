@@ -14,9 +14,11 @@ FILES = (
     "requirements.txt",
     "requirements-gpu.txt",
     "run.py",
+    "local_session.py",
     "sync_manifest.py",
     "modal_runner.py",
     "project/demo.py",
+    "project/train_demo.py",
     "checks.py",
     "build_archive.py",
 )

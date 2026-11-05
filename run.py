@@ -1,18 +1,47 @@
 """python run.py [launcher options] -- python train.py [workload options]"""
 
 import argparse
+import contextlib
 import datetime
 import json
 import re
+import shutil
+import sys
 import tempfile
-import time
 import tomllib
 import uuid
 from pathlib import Path, PurePosixPath
 
+from local_session import StopRequests, wait_for_result
+
 from sync_manifest import inside, output_paths, relative_path, snapshot
 
 ROOT = Path(__file__).resolve().parent
+
+
+class LightGreyStream:
+    """Keep Modal's live terminal output readable without changing redirected logs."""
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.pending_escape = ""
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+    def write(self, text):
+        length = len(text)
+        text = self.pending_escape + text
+        self.pending_escape = ""
+        # A network chunk can end halfway through a cursor/color escape sequence.
+        incomplete = re.search(r"\x1b(?:\[[0-?]*[ -/]*)?$", text)
+        if incomplete:
+            self.pending_escape = incomplete.group()
+            text = text[: incomplete.start()]
+        if text:
+            plain = re.sub(r"\x1b\[[0-9;:]*m", "", text)
+            self.stream.write("\x1b[37m" + plain + "\x1b[0m")
+        return length
 
 
 def download(volume, run_id, destination):
@@ -45,12 +74,29 @@ def download(volume, run_id, destination):
 
 def validate(config):
     settings = config["modal"]
+    environment = config.get("environment", {})
+    if not isinstance(environment, dict) or any(
+        not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+        or not isinstance(value, str)
+        or "\x00" in value
+        for key, value in environment.items()
+    ):
+        raise ValueError(
+            "environment must be a table of valid variable names and string values"
+        )
     output_paths(config["sync"]["output_dirs"])
     relative_path(config["sync"]["project_dir"])
     relative_path(config["sync"]["local_dir"])
     timeout = settings["timeout_seconds"]
-    if not isinstance(timeout, int) or not 1 <= timeout <= 86280:
-        raise ValueError("timeout_seconds must be an integer from 1 to 86280")
+    grace = settings.get("shutdown_grace_seconds", 60)
+    if not isinstance(grace, int) or not 1 <= grace <= 3600:
+        raise ValueError("shutdown_grace_seconds must be an integer from 1 to 3600")
+    if not isinstance(timeout, int) or timeout < 1 or timeout + grace + 120 > 86400:
+        raise ValueError(
+            "workload timeout + shutdown grace + 120 seconds must fit within 24 hours"
+        )
+    if not isinstance(config["workload"].get("terminal", True), bool):
+        raise TypeError("workload.terminal must be true or false")
     if (
         settings["cpu"] <= 0
         or settings["memory_mib"] <= 0
@@ -154,7 +200,9 @@ def main(argv=None):
             gpu=gpu,
             cpu=settings["cpu"],
             memory=settings["memory_mib"],
-            timeout=settings["timeout_seconds"] + 120,
+            timeout=settings["timeout_seconds"]
+            + settings.get("shutdown_grace_seconds", 60)
+            + 120,
             startup_timeout=settings["startup_timeout_seconds"],
             volumes={"/cache": cache, "/artifacts": artifacts},
             max_containers=1,
@@ -174,11 +222,17 @@ def main(argv=None):
             "command": config["workload"]["command"],
             "output_dirs": config["sync"]["output_dirs"],
             "timeout_seconds": settings["timeout_seconds"],
+            "startup_timeout_seconds": settings["startup_timeout_seconds"],
+            "shutdown_grace_seconds": settings.get("shutdown_grace_seconds", 60),
+            "terminal": config["workload"].get("terminal", True),
+            "terminal_columns": shutil.get_terminal_size(fallback=(100, 24)).columns,
+            "terminal_rows": shutil.get_terminal_size(fallback=(100, 24)).lines,
             "gpu_request": gpu,
             "cpu": settings["cpu"],
             "memory_mib": settings["memory_mib"],
             "cache_volume": settings["cache_volume"],
             "artifact_volume": settings["artifact_volume"],
+            "environment": config.get("environment", {}),
         }
         (destination / "submitted.json").write_text(json.dumps(spec, indent=2) + "\n")
         print(
@@ -190,48 +244,39 @@ def main(argv=None):
             flush=True,
         )
         result = None
-        with modal.enable_output(), app.run():
-            call = function.spawn(spec)
-            (destination / "call.json").write_text(
-                json.dumps({"call_id": call.object_id}, indent=2) + "\n"
-            )
-            finished = False
-            deadline = (
-                time.monotonic()
-                + settings["timeout_seconds"]
-                + settings["startup_timeout_seconds"]
-                + 180
-            )
-            try:
-                while True:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise TimeoutError("queue/startup/workload wait limit exceeded")
-                    try:
-                        result = call.get(timeout=min(10, remaining))
-                        finished = True
-                        break
-                    except TimeoutError:
-                        print(f"[launcher] waiting for {run_id}", flush=True)
-            finally:
-                if not finished:
-                    call.cancel(terminate_containers=True)
-                    (destination / "interrupted.json").write_text(
-                        json.dumps(
-                            {"status": "interrupted", "call_id": call.object_id},
-                            indent=2,
+        with (
+            modal.enable_output(show_progress=False),
+            app.run(),
+            modal.Queue.ephemeral() as channel,
+        ):
+            with StopRequests() as stops:
+                call = function.spawn(spec, channel)
+                (destination / "call.json").write_text(
+                    json.dumps({"call_id": call.object_id}, indent=2) + "\n"
+                )
+                finished = False
+                try:
+                    result = wait_for_result(call, channel, spec, stops)
+                    finished = True
+                finally:
+                    if not finished:
+                        call.cancel(terminate_containers=True)
+                        (destination / "interrupted.json").write_text(
+                            json.dumps(
+                                {"status": "interrupted", "call_id": call.object_id},
+                                indent=2,
+                            )
+                            + "\n"
                         )
-                        + "\n"
-                    )
-                    print(
-                        f"Run interrupted. Recover last committed files with --download {run_id}",
-                        flush=True,
-                    )
-            # Download even when the workload returned a failure or timed out.
+                        print(
+                            f"Emergency stop. Recover committed files with --download {run_id}",
+                            flush=True,
+                        )
             (destination / "result.json").write_text(
                 json.dumps(result, indent=2) + "\n"
             )
-            download(artifacts, run_id, destination)
+            if not result.get("canceled_before_start"):
+                download(artifacts, run_id, destination)
         # Modal's app context can suppress KeyboardInterrupt after stopping the app.
         if result is None:
             return 130
@@ -243,4 +288,11 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    output = LightGreyStream(sys.stdout) if sys.stdout.isatty() else sys.stdout
+    errors = LightGreyStream(sys.stderr) if sys.stderr.isatty() else sys.stderr
+    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+        try:
+            code = main()
+        except KeyboardInterrupt:
+            code = 130
+    raise SystemExit(code)

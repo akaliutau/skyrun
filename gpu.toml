@@ -13,7 +13,7 @@ python_version = "3.11"
 apt_packages = ["git"]
 
 [sync]
-project_dir = "project"             # only this named folder is scanned
+project_dir = "src"             # only this named folder is scanned
 output_dirs = ["outputs", "checkpoints"]  # relative to the workload's cwd
 local_dir = "runs"                  # downloaded files: runs/<run-id>/...
 max_upload_files = 1024

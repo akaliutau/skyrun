@@ -12,7 +12,9 @@ launcher reads the SDK's normal local credentials. Credentials are never copied
 into the archive or uploaded source. If you need to install the launcher SDK:
 
 ```bash
-python -m pip install -r requirements.txt
+conda create -n modal1 python=3.12 -y
+conda activate modal1
+pip install -r requirements.txt
 # Only for a machine not already authorized:
 python -m modal setup
 ```

@@ -1,0 +1,6 @@
+# Installed in the remote image; also usable on another machine for the workload.
+torch==2.8.0
+transformers==4.51.3
+huggingface-hub==0.30.2
+safetensors==0.5.3
+numpy==2.2.6

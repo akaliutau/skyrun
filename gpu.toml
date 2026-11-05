@@ -1,0 +1,23 @@
+[modal]
+app_name = "portable-gpu-starter"
+gpu = "T4"                         # e.g. L4, A10, A100-80GB, H100:2, or cpu
+cpu = 1
+memory_mib = 4096
+timeout_seconds = 600               # workload budget, excluding image build/startup
+startup_timeout_seconds = 600
+cache_volume = "portable-gpu-starter-cache"
+artifact_volume = "portable-gpu-starter-artifacts"
+
+[image]
+python_version = "3.11"
+apt_packages = ["git"]
+
+[sync]
+project_dir = "project"             # only this named folder is scanned
+output_dirs = ["outputs", "checkpoints"]  # relative to the workload's cwd
+local_dir = "runs"                  # downloaded files: runs/<run-id>/...
+max_upload_files = 1024
+max_upload_mib = 64
+
+[workload]
+command = ["python", "demo.py", "--require-cuda"]

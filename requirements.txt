@@ -1,0 +1,2 @@
+# Launcher only. Use the Python environment already authenticated with Modal.
+modal==1.3.1

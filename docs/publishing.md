@@ -103,6 +103,38 @@ Environment names must match exactly. These details follow the official
 [publisher setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/) and
 [publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/) guides.
 
+### Troubleshooting `invalid-publisher`
+
+`valid token, but no corresponding publisher` means GitHub issued a valid OIDC
+token, but the destination index could not find a matching registered publisher.
+Adding the workflow or a GitHub environment does not register it with PyPI.
+
+For the first release, open your
+[PyPI account's publishing page](https://pypi.org/manage/account/publishing/)
+and add a pending GitHub publisher using the PyPI column in the table above.
+If you already own the PyPI project, open **Your projects → skyrun → Manage →
+Publishing** and add the publisher there instead. A publisher registered only
+on TestPyPI cannot authorize production PyPI uploads.
+
+Check that the repository is `skyrun`, including after a repository move or rename.
+The workflow field must be `publish.yml`, without `.github/workflows/`, the
+repository name, or a tag suffix. Register the workflow containing the publish
+job, rather than `ci.yml`, which only performs the reusable validation work.
+The production environment is `pypi`; the TestPyPI environment is `testpypi`.
+
+GitHub's immutable subject format can include numeric owner/repository IDs, such
+as `repo:OWNER@ID/REPOSITORY@ID:environment:pypi`. Enter ordinary owner and
+repository names in PyPI's form, without the `@ID` suffixes. PyPI's
+[GitHub publisher matching implementation](https://github.com/pypi/warehouse/blob/main/warehouse/oidc/models/github.py)
+uses the repository, owner ID, workflow, and environment claims rather than the
+full `sub` string. Changing GitHub's subject format is unnecessary for this error.
+
+After correcting the index-side publisher registration, rerun the failed publish
+job at the same release tag. A token-exchange failure occurs before package
+upload, so this failure alone does not require a version bump or a new tag.
+See [PyPI's troubleshooting guide](https://docs.pypi.org/trusted-publishers/troubleshooting/#token-minting)
+for other exchange errors.
+
 ## 4. Rehearse on TestPyPI
 
 Push your reviewed candidate branch, open **Actions → Publish → Run workflow**,

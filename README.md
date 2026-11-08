@@ -39,7 +39,7 @@ release; use the repository installation until it is published to PyPI.
 ## Installation I
 
 ```bash
-pip install 'skyrun[modal]
+pip install 'skyrun[modal]'
 ```
 
 ## Installation II (from source code)
@@ -184,6 +184,25 @@ The client is synchronous. Losing its connection is not a graceful stop request;
 a hard kill or preemption may leave only previously committed files. The output
 stream supports terminal output and progress bars; it does not forward interactive
 stdin. See [operations and exit codes](https://github.com/akaliutau/skyrun/blob/main/docs/configuration.md).
+
+## Architecture
+
+```
+                              LOCAL MACHINE                                              MODAL CONTAINER
+ ┌──────────────────────────────────────────────────────────────────┐        ┌────────────────────────────────────────┐
+ │  CLI / SDK Entrypoint ($ skyrun --gpu A100 -- python train.py)   │        │   Remote Runner Engine                 │
+ │  ─────────────────────────────────────────────────────────────   │        │   ───────────────────────────────────  │
+ │  1. Parse Config (`pyproject.toml` or `skyrun.toml`)             │        │   1. Mount Artifact Volume             │
+ │  2. Scan & Hash Source                                           │        │   2. Extract Source Bundle             │
+ │  3. Pack In-Memory Zip/Tar Archive                               │        │   3. Set Up Process Group + PTY        │
+ │  4. Invoke Remote Modal App                                      │ ────>  │   4. Execute Subprocess (eg.`train.py`)│
+ │                                                                  │        │   5. Catch Signals / Harvest Artifacts │
+ │  5. Stream Live Logs / Terminal Output (PTY)                     │ <────  │   6. Save to `/artifacts/<run_id>/`    │
+ │  6. Download Artifacts to `runs/<run_id>/`                       │        │                                        │
+ └──────────────────────────────────────────────────────────────────┘        └────────────────────────────────────────┘
+
+```
+
 
 ## Python API
 

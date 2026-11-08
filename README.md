@@ -1,276 +1,212 @@
-# Portable Python on Modal GPUs
+# Skyrun
 
-Write normal Python in `src/`. Run one local command to upload a frozen source
-snapshot, execute it on the requested GPU, stream logs, and download selected
-output directories. The code in `src/` has no Modal imports, decorators or
-runner dependencies. This folder works after extraction anywhere; it does not
-import anything from the research repository that produced it.
+**Run ordinary Python projects on cloud compute. Keep your code portable.**
 
-You need Python 3.11+ locally, internet access, and an authenticated Modal account.
-Use your existing Python environment with Modal installed and authorized; the
-launcher reads the SDK's normal local credentials. Credentials are never copied
-into the archive or uploaded source. If you need to install the launcher SDK:
+[![CI](https://github.com/akaliutau/skyrun/actions/workflows/ci.yml/badge.svg)](https://github.com/akaliutau/skyrun/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/akaliutau/skyrun/blob/main/LICENSE)
 
-```bash
-conda create -n modal1 python=3.12 -y
-conda activate modal1
-pip install -r requirements.txt
-# Only for a machine not already authorized:
-python -m modal setup
-```
+Skyrun freezes a selected project folder, executes your command on Modal CPU or
+GPU compute, streams live terminal output, and downloads saved files. Optional
+bidirectional sync brings selected changes back into your working project while
+protecting concurrent local edits. Your scripts need no Modal imports or runner
+decorators.
 
-Run the included example from this folder:
+The package exposes a CLI and Python API, with a provider interface for future
+backends. Modal is the first supported provider. Version 0.1.0 is prepared for
+release; use the repository installation until it is published to PyPI.
 
-```bash
-python run.py
-```
+[Quick start](https://github.com/akaliutau/skyrun/blob/main/docs/quickstart.md) · [Examples](https://github.com/akaliutau/skyrun/blob/main/docs/examples.md) ·
+[Configuration](https://github.com/akaliutau/skyrun/blob/main/docs/configuration.md) · [File sync](https://github.com/akaliutau/skyrun/blob/main/docs/synchronization.md) ·
+[Python API & architecture](https://github.com/akaliutau/skyrun/blob/main/docs/architecture.md) · [Publishing](https://github.com/akaliutau/skyrun/blob/main/docs/publishing.md)
 
-Terminal output uses light grey, including Modal's remote logs. Redirected output
-uses plain text without added color codes.
+## Why Skyrun
 
-It prints the operating system, Python and installed packages, CPU and host RAM,
-CUDA/cuDNN, `nvidia-smi`, GPU count, names, VRAM, compute capabilities and topology.
-It then loads a pinned, public Qwen2.5 0.5B Instruct checkpoint and generates text
-on `cuda:0` in float16. The default command requires CUDA and fails if GPU access
-is missing. Its 48-token output cap and 600-second workload deadline keep the
-smoke bounded. Environment reporting selects hardware/software details and cache
-paths; it does not print credentials or all environment variables.
+- **Portable workloads.** Run the same scripts locally or remotely using ordinary
+  argv commands, sibling imports, and filesystem paths.
+- **Reproducible source.** Inspect exact paths and SHA-256 hashes before launch.
+  Only the chosen project folder is scanned; `.modalignore` controls eligible files.
+- **Efficient transfers.** Immutable source blobs are reused by content hash.
+  Artifact downloads stream to disk with atomic file replacement.
+- **Usable terminal output.** Live PTY output supports normal tqdm progress bars,
+  carriage returns, Unicode, and cursor movement. Full logs remain available.
+- **Graceful stops.** Ctrl-C signals the workload process group, allows checkpoint
+  cleanup, then commits and retrieves saved files. Repeated requests escalate.
+- **Selective round trips.** Explicitly chosen files or directories return to the
+  working project with integrity checks and conflict detection.
+- **Extensible infrastructure.** Provider SDKs stay behind adapters. Core config,
+  snapshots, examples, and dry runs work without cloud authentication.
 
-The first run builds a Python 3.11 image, installs `requirements-gpu.txt`, and
-downloads the model. Later runs reuse the image and model cache. The archive
-contains source/configuration, not Python packages or model weights: a first run
-requires downloads. See [VALIDATION.md](VALIDATION.md) for measured checks.
+## Quick start
 
-The workload's stdout and stderr stream directly to your local terminal while it
-runs. A remote pseudo-terminal is enabled by default, so ordinary CLI `tqdm`
-bars see a terminal and update in place, including carriage returns, Unicode and
-cursor movements for nested bars. Output is not held until a newline or until
-the job finishes. The terminal width is taken from your local terminal at launch.
-Updates still incur network/relay latency; this is live output, not a local GPU.
-
-Try the included small PyTorch training example to see progress and stop it:
+Use Python 3.11+ and an authenticated Modal account. From this repository:
 
 ```bash
-python run.py -- python train_demo.py --require-cuda --steps 600 --delay 0.2
-# The same code also works on remote CPU:
-python run.py --gpu cpu -- python train_demo.py --steps 600 --delay 0.2
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[modal]'
+python -m modal setup  # only if this environment is not already authenticated
+
+skyrun init /tmp/skyrun-hello --example hello
+cd /tmp/skyrun-hello
+skyrun --dry-run
+skyrun run
 ```
 
-After `TRAINING_READY`, press **Ctrl-C once**. The client stays connected, sends
-`SIGINT` to the remote workload's process group and keeps streaming its cleanup
-output. Python code can catch `KeyboardInterrupt` or save from `finally`, exactly
-as it would locally. The wrapper then commits the output files and logs, downloads
-them automatically and exits with code 130. The sample saves model/optimizer
-state to `checkpoints/last.pt` and a summary to `outputs/training.json`.
+The hello example uses CPU and the Python standard library. Expect
+`Hello from skyrun`, exit `0`, and `runs/<run-id>/outputs/hello.json`. Actual runs
+allocate resources in your Modal account; initialization and dry runs are offline.
+After publication, install with `python -m pip install 'skyrun[modal]'`.
 
-Your own training code must implement its checkpoint save operation; the runner
-cannot infer how to serialize an arbitrary model or optimizer. Existing saved
-files are retained even when the script has no cleanup handler. A portable pattern
-is:
-
-```python
-try:
-    train()
-except KeyboardInterrupt:
-    print("Stopping training...")
-finally:
-    save_checkpoint("checkpoints/last.pt")
-```
-
-The default cleanup allowance is 60 seconds. Change
-`shutdown_grace_seconds = 120` in the existing `[modal]` section of `gpu.toml`
-when your checkpoint needs longer. If the allowance expires, the wrapper kills
-the remaining workload processes and still commits/downloads their saved files.
-Pressing **Ctrl-C a second time** skips the remaining allowance and forces the
-workload to stop, while leaving the wrapper alive to retrieve files. A third
-press is an emergency container cancellation and cannot guarantee a fresh commit.
-If the workload is still queued, Ctrl-C cancels it without starting the training.
-
-Timeouts use the same cleanup allowance and return 124. A timeout can therefore
-take up to its configured workload budget plus the cleanup allowance. The run
-record distinguishes `canceled`, `timed_out`, the actual workload exit code, and
-whether a forced kill was needed.
-
-The stream carries terminal output; it does not forward interactive stdin or
-notebook widgets. Set `terminal = false` in `[workload]` for programs that should
-see pipes instead of a terminal. Full raw output is saved in `_runner/console.log`
-even if a slow/disconnected viewer falls behind; `stream_dropped_bytes` records
-any live-view bytes omitted due to backpressure. Files download at the end/stop,
-rather than continuously mirroring every checkpoint to the local machine.
-
-The launcher prints a run ID and creates this local layout:
-
-```text
-runs/<run-id>/
-  submitted.json                 command, hardware budget and source hashes
-  call.json                      Modal function call ID
-  result.json                    status, exit code and timing
-  _runner/console.log            full combined stdout/stderr
-  _runner/result.json            remote run record
-  _runner/source.json            exact uploaded manifest and hashes
-  outputs/environment.json       example's hardware and software report
-  outputs/inference.json         model revision, actual device/dtype and inference
-  outputs/generated.txt          generated response
-  checkpoints/                   created remotely; downloaded when it has files
-```
-
-Each run gets fresh output directories. Empty directories are not downloaded.
-Model weights stay on `/cache` in a persistent Modal Volume; run outputs live in
-`/artifacts/runs/<run-id>/` on a different persistent Volume. The remote worker
-links the configured relative output directories to that artifact location, so
-your program uses ordinary paths such as `outputs/` and `checkpoints/`.
-
-Change the GPU, budget, arguments or local output destination without editing
-your workload:
+For an existing project, run `skyrun init` in its folder, configure its remote
+requirements, inspect uploads, and invoke its normal command:
 
 ```bash
-python run.py --gpu L4 --timeout 900 -- python demo.py --require-cuda --max-new-tokens 32
-python run.py --output-dir /tmp/my-gpu-runs
-python run.py --dry-run
+skyrun run --gpu L4 --timeout 1800 -- python train.py --epochs 5
+# Select a folder explicitly using configuration stored elsewhere:
+skyrun run --config /path/to/skyrun.toml --project-dir /path/to/project -- python train.py
 ```
 
-The default development request is one T4, one CPU and 4 GiB of host RAM.
-Increase CPU and host RAM explicitly for your own training workload.
-`gpu.toml` configures the src folder, command, GPU, CPU, RAM, timeouts, image
-Python version, OS packages, volume names and output directories. Launcher
-arguments go before `--`; the ordinary subprocess command and its arguments go
-after it. Arguments are passed directly without a shell. The working directory
-is the uploaded project's root, and sibling modules are importable normally.
+Arguments after `--` go directly to the subprocess. The command's working directory
+is the uploaded project root. The [complete quick start](https://github.com/akaliutau/skyrun/blob/main/docs/quickstart.md)
+explains installation, dependencies, saved files, and recovery.
 
-To add remote Python packages, append them to `requirements-gpu.txt`, keeping
-the existing dependencies. For example, add `pandas==2.2.3`, or the versions of
-PEFT and datasets required by your training script. `requirements.txt` is for
-the local launcher only. Next time you run `python run.py`, Modal automatically
-builds the updated image and caches it for subsequent runs. Packages installed
-only in your local environment are not copied to the remote machine.
+## Examples included with every installation
 
-For Linux packages, edit the existing `[image]` table in `gpu.toml`:
+| Example | Create a runnable project | Default compute | What it shows |
+| --- | --- | --- | --- |
+| Hello | `skyrun init hello --example hello` | CPU | Minimal command, live logs, saved JSON |
+| Training | `skyrun init training --example training` | T4 | PyTorch, tqdm, Ctrl-C checkpoint save |
+| Inference | `skyrun init inference --example inference` | T4 | Hardware report, pinned Qwen model, model cache |
+
+Then enter the created directory and run `skyrun --dry-run` followed by
+`skyrun run`. Examples include their configuration, ignore file, and any required
+remote dependencies. They are package resources, so users of a wheel get the same
+samples as repository users. See [commands and expected outputs](https://github.com/akaliutau/skyrun/blob/main/docs/examples.md).
+
+## Configuration
+
+Use `skyrun.toml` or `[tool.skyrun]` in `pyproject.toml`. Runtime resources belong
+under `[run]`; provider settings belong under `[modal]`. A typical configuration is:
 
 ```toml
+provider = "modal"
+
+[run]
+app_name = "my-project"
+gpu = "T4"
+timeout_seconds = 1800
+shutdown_grace_seconds = 60
+
 [image]
 python_version = "3.11"
-apt_packages = ["git", "curl", "ffmpeg", "build-essential"]
+requirements = "requirements-gpu.txt"
+apt_packages = ["git"]
+
+[sync]
+project_dir = "src"
+output_dirs = ["outputs", "checkpoints"]
+local_dir = "runs"
+
+[workload]
+command = ["python", "train.py"]
+terminal = true
 ```
 
-The launcher installs these through apt when building the remote image. You do
-not need to run apt manually inside your workload.
+Relative paths are based on the configuration directory; output paths and ignore
+rules are based on the project folder. Unspecified Volume names derive from the
+application name. Local environments and credentials are not copied. Configure
+workload variables in `[environment]` and private values through named Modal
+Secrets. See the [configuration reference](https://github.com/akaliutau/skyrun/blob/main/docs/configuration.md).
 
-Set remote workload environment variables in the `[environment]` table:
+## Optional bidirectional sync
+
+Output directories always download into the run directory. To bring selected
+files back into your original working project, add an explicit selection:
 
 ```toml
-[environment]
-TOKENIZERS_PARALLELISM = "false"
-MY_SETTING = "example value"
-OMP_NUM_THREADS = "1"
+[sync]
+project_dir = "src"
+output_dirs = ["outputs", "checkpoints"]
+bidirectional = ["settings.json", "data/processed"]
 ```
 
-All values must be strings, including numbers and booleans. These settings apply
-to the workload and its subprocesses, take precedence over the runner's cache
-defaults, and are saved in the run metadata. They do not set variables on your
-local machine or during image/package installation. Local environment variables
-are not automatically forwarded. Your unchanged Python code reads them normally:
+Selected files upload at launch. New and modified selected files return after
+execution, including handled failures and stops. Local changes made during the
+run cause a conflict: local files stay intact and remote versions remain under
+`runs/<run-id>/_sync/files/`. Use `--no-sync` to defer application or recover with
+an explicit conflict policy:
+
+```bash
+skyrun download RUN_ID --sync --sync-conflict local
+skyrun download RUN_ID --sync --sync-conflict remote
+```
+
+Sync runs at launch/completion boundaries. Deletions are reported, never propagated
+automatically. Selections are literal paths, obey `.modalignore`, and must not
+overlap output directories. See [sync rules and resumable checkpoints](https://github.com/akaliutau/skyrun/blob/main/docs/synchronization.md).
+
+## Logs, interruption, and recovery
+
+Each invocation creates `runs/<run-id>/` with the submitted manifest, execution
+status, complete `_runner/console.log`, and configured output files. Model caches
+persist on a separate Volume. Source blobs use their own content-addressed Volume.
+
+Press Ctrl-C once to request SIGINT and allow workload cleanup. A second press
+forces the workload to stop while the wrapper retrieves saved files. A third is
+an emergency cancellation. Your code must save its own checkpoint, for example
+from `finally`; the runner cannot serialize an arbitrary model automatically.
+
+Normal exits preserve the command's exit code. Cancellation returns `130` and
+timeout returns `124`. A timeout includes the configured cleanup allowance.
+Recover committed files without allocating a GPU:
+
+```bash
+skyrun download RUN_ID
+skyrun download RUN_ID --output-dir /tmp/recovered
+```
+
+The client is synchronous. Losing its connection is not a graceful stop request;
+a hard kill or preemption may leave only previously committed files. The output
+stream supports terminal output and progress bars; it does not forward interactive
+stdin. See [operations and exit codes](https://github.com/akaliutau/skyrun/blob/main/docs/configuration.md).
+
+## Python API
 
 ```python
-import os
+from skyrun import download, run
 
-print(os.environ["MY_SETTING"])
+result = run("skyrun.toml", gpu="L4", command=["python", "train.py"])
+print(result.run_id, result.status, result.returncode, result.directory)
+download(result.run_id, "skyrun.toml", output_dir="/tmp/recovered")
 ```
 
-Inspect the actual remote environment with the standard `printenv` command:
+The provider contract supports third-party adapters through the `skyrun.providers`
+entry-point group. See [architecture and extension points](https://github.com/akaliutau/skyrun/blob/main/docs/architecture.md).
+
+## Development and releases
 
 ```bash
-python run.py --gpu cpu -- printenv             # complete CPU workload environment
-python run.py --gpu cpu -- printenv MY_SETTING  # one variable
-python run.py -- printenv                      # include the allocated GPU's variables
+python -m pip install -e '.[modal,dev]'
+python -m pytest
+python -m ruff check .
+python -m ruff format --check .
+python -m build
+python -m twine check --strict dist/*
+python tools/check_dist.py
 ```
 
-These commands replace the demo for that run, so they do not load the model.
-Their stdout is also downloaded as `_runner/console.log`. A full `printenv`
-includes any secret values present in that process; use named variables when
-you want to inspect only specific settings.
+Offline tests exercise real subprocess lifecycle behavior, source policy,
+transport interruption, recovery, and sync conflicts. Live Modal tests require
+explicit opt-in. Read [validation](https://github.com/akaliutau/skyrun/blob/main/docs/validation.md) for the test boundaries and
+GPU release checks.
 
-To fine-tune a model, add your own `src/train.py` and training data under
-`src/`, add dependencies such as PEFT or datasets to `requirements-gpu.txt`,
-and direct its saved adapters/checkpoints to a configured output directory:
+The [publishing guide](https://github.com/akaliutau/skyrun/blob/main/docs/publishing.md) covers namespace ownership, building
+and checking distributions, clean-wheel example validation, TestPyPI rehearsal,
+Trusted Publishing, manual uploads, release tags, and post-release verification.
+The repository includes CI and separate TestPyPI/PyPI publish jobs.
 
-```bash
-python run.py --gpu A100-80GB --timeout 7200 -- python train.py --output_dir checkpoints
-# Example for a training script that supports PyTorch distributed execution:
-python run.py --gpu H100:2 --timeout 7200 -- torchrun --standalone --nnodes 1 --nproc-per-node 2 train.py
-```
-
-These commands assume you have written `train.py`; the included sample performs
-inference. GPU strings/counts are passed through to Modal. T4 is the tested
-default; other GPUs need compatible PyTorch/CUDA versions and suitable dtypes.
-The default pip wheels provide CUDA runtime libraries, not the `nvcc` development
-toolchain. For code compiling custom CUDA extensions, adapt the image definition
-in `run.py` to a suitable CUDA development image and pin its dependencies.
-
-Run exactly the same example directly on another machine, without the launcher:
-
-```bash
-python -m pip install -r requirements-gpu.txt
-cd src
-python demo.py --require-cuda
-# The same script also supports CPU execution:
-python demo.py
-```
-
-Your own scripts can use `torch.cuda`, Hugging Face Trainer, Accelerate or
-`torchrun` as usual. Hardware selection and file transport belong to the launcher.
-For a remote CPU run of the sample, override its CUDA requirement:
-
-```bash
-python run.py --gpu cpu -- python demo.py
-```
-
-Python errors, graceful stops and handled command timeouts still commit and
-download saved outputs and logs. Normal completion preserves the workload exit
-code; a user stop returns 130 and a timeout returns 124. Child training workers
-are included in the process group cleanup.
-Downloads stream to disk, including large checkpoints, instead of returning file
-contents through a function response. If a download or client session is
-interrupted, recover committed files without allocating a GPU:
-
-```bash
-python run.py --download RUN_ID
-python run.py --download RUN_ID --output-dir /tmp/recovered
-```
-
-Recovery uses the same Modal environment and artifact volume named in `gpu.toml`.
-It replaces matching files within that run only. A hard container kill, preemption
-or network loss can leave only the last committed files. This launcher is
-synchronous; losing the client connection is not a graceful-stop request. It is
-not a detached job scheduler or
-a continuous bidirectional filesystem mirror. Source edits take effect next run.
-
-`sync_manifest.py` is the only upload policy. It scans the configured named project
-folder, never the starter/repository root. It excludes hidden files/directories,
-symlinks, environments, caches, saved weights, solution files and configured
-outputs, with a default limit of 1,024 files / 64 MiB. The three explicitly listed
-runtime/dependency files are also included. Inspect every uploaded path and hash
-with `--dry-run`. Keep large downloadable weights in the remote cache; increase
-the explicit limits if your project needs larger input data. Modify this policy
-when your workload needs otherwise excluded file types. Plain non-hidden files
-inside `src/` are considered inputs, so keep private material elsewhere.
-
-Use separate volume names in `gpu.toml` when starting an unrelated project.
-Persistent volumes remain after a run; manage retention with Modal's volume tools.
-The starter uses public weights and does not forward local secrets or require a
-Hugging Face token. Model and tokenizer downloads pin revision
-`7ae557604adf67be50417f59c2c2f167def9a775`, use safetensors, and disable remote code.
-
-Run focused CPU checks or rebuild the distributable:
-
-```bash
-python -m unittest -v checks
-python build_archive.py --output modal-gpu-starter.zip
-```
-
-References: [Modal GPU selection](https://modal.com/docs/guide/gpu),
-[Modal image and package configuration](https://modal.com/docs/guide/images),
-[Modal Python app lifecycle and logs](https://modal.com/docs/guide/apps),
-[Modal control and streaming queues](https://modal.com/docs/guide/queues),
-[tqdm terminal behavior](https://tqdm.github.io/docs/tqdm/),
-[Modal Volumes](https://modal.com/docs/guide/volumes),
-[Qwen model and Apache 2.0 license](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775).
+Contributions follow [CONTRIBUTING.md](https://github.com/akaliutau/skyrun/blob/main/CONTRIBUTING.md) and the
+[code of conduct](https://github.com/akaliutau/skyrun/blob/main/CODE_OF_CONDUCT.md). See [AUTHORS.md](https://github.com/akaliutau/skyrun/blob/main/AUTHORS.md),
+[security reporting](https://github.com/akaliutau/skyrun/blob/main/SECURITY.md), and the [changelog](https://github.com/akaliutau/skyrun/blob/main/CHANGELOG.md).
+Skyrun is licensed under [MIT](https://github.com/akaliutau/skyrun/blob/main/LICENSE).

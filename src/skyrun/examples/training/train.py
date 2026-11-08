@@ -31,9 +31,7 @@ def main():
     step, loss_value = 0, None
     print(f"TRAINING_READY device={device}; press Ctrl-C to save and stop", flush=True)
     try:
-        with trange(
-            args.steps, desc="Training", dynamic_ncols=True, mininterval=0.1
-        ) as progress:
+        with trange(args.steps, desc="Training", dynamic_ncols=True, mininterval=0.1) as progress:
             for _ in progress:
                 optimizer.zero_grad(set_to_none=True)
                 loss = torch.nn.functional.mse_loss(model(inputs), targets)

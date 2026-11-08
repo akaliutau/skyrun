@@ -1,0 +1,23 @@
+provider = "modal"
+
+[run]
+app_name = "skyrun-training"
+gpu = "T4"
+timeout_seconds = 600
+shutdown_grace_seconds = 60
+
+[modal]
+cache_volume = "skyrun-training-cache"
+artifact_volume = "skyrun-training-artifacts"
+
+[image]
+requirements = "requirements-gpu.txt"
+
+[sync]
+project_dir = "."
+output_dirs = ["outputs", "checkpoints"]
+local_dir = "runs"
+
+[workload]
+terminal = true
+command = ["python", "train.py", "--require-cuda", "--steps", "600", "--delay", "0.2"]

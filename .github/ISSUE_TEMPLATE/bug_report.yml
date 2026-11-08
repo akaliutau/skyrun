@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible problem with Skyrun.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the command and a sanitized configuration. Remove credentials and private paths/content.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions and environment
+      description: Skyrun, Python, Modal SDK, local OS, requested compute, and relevant run status.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Share only sanitized logs. Console output can contain workload secrets.

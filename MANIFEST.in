@@ -1,0 +1,9 @@
+include LICENSE README.md CONTRIBUTING.md CODE_OF_CONDUCT.md AUTHORS.md SECURITY.md CHANGELOG.md
+include .gitignore
+recursive-include docs *.md
+recursive-include tests *.py
+recursive-include .github *.yml *.yaml *.md
+recursive-include tools *.py
+global-exclude __pycache__ *.py[cod]
+prune runs
+exclude plan.txt

@@ -1,0 +1,24 @@
+provider = "modal"
+
+[run]
+app_name = "skyrun-inference"
+gpu = "T4"
+timeout_seconds = 600
+
+[modal]
+cache_volume = "skyrun-inference-cache"
+artifact_volume = "skyrun-inference-artifacts"
+
+[image]
+requirements = "requirements-gpu.txt"
+
+[environment]
+TOKENIZERS_PARALLELISM = "false"
+
+[sync]
+project_dir = "."
+output_dirs = ["outputs", "checkpoints"]
+local_dir = "runs"
+
+[workload]
+command = ["python", "demo.py", "--require-cuda"]

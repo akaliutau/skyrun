@@ -1,0 +1,28 @@
+# Baseline upload policy. Project .modalignore rules are appended, including ! rules.
+# Structural exclusions (symlinks, .git, runner metadata) cannot be overridden.
+.*
+__pycache__/
+venv/
+env/
+site-packages/
+__pypackages__/
+node_modules/
+build/
+dist/
+*.egg-info/
+cache/
+models/
+weights/
+checkpoints/
+artifacts/
+runs/
+*.[pP][yY][cCoO]
+*.[lL][oO][gG]
+*.[pP][tT]
+*.[pP][tT][hH]
+*.[cC][kK][pP][tT]
+*.[sS][aA][fF][eE][tT][eE][nN][sS][oO][rR][sS]
+*.[bB][iI][nN]
+*.[pP][eE][mM]
+*.[kK][eE][yY]
+*[sS][oO][lL][uU][tT][iI][oO][nN][sS]*

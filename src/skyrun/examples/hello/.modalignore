@@ -1,0 +1,3 @@
+# Project rules extend skyrun's baseline policy (gitignore syntax).
+# Inspect the exact upload set with: skyrun --dry-run
+# Example: data/private/

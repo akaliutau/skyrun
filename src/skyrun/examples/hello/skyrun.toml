@@ -1,0 +1,18 @@
+provider = "modal"
+
+[run]
+app_name = "skyrun-hello"
+gpu = "cpu"
+timeout_seconds = 60
+
+[modal]
+cache_volume = "skyrun-hello-cache"
+artifact_volume = "skyrun-hello-artifacts"
+
+[sync]
+project_dir = "."
+output_dirs = ["outputs"]
+local_dir = "runs"
+
+[workload]
+command = ["python", "main.py"]

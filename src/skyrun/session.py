@@ -77,9 +77,7 @@ def wait_for_result(call, channel, spec, stops, *, stream=None):
                     flush=True,
                 )
         if start_sent and stops.level > sent_level:
-            channel.put(
-                "kill" if stops.level >= 2 else "interrupt", partition="commands"
-            )
+            channel.put("kill" if stops.level >= 2 else "interrupt", partition="commands")
             sent_level = stops.level
             print(
                 "\nForce requested; waiting for logs and output files."

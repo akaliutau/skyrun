@@ -1,0 +1,175 @@
+## Catchy Package & Tool Name Ideas
+
+Here are name options grouped by brand positioning:
+
+* **`modrun` / `modexec**`: Clean, developer-friendly, and functional. Communicates execution on top of Modal instantly.
+* **`skyrun` / `skydock**`: Evokes lightweight cloud execution and offloading local tasks into the sky.
+* **`telecode` / `teleport**`: Focuses on seamlessly running local source code on remote instances.
+* **`offload` / `offgrid**`: Highlights the core value proposition of taking heavy workloads off your local machine to GPU nodes.
+
+---
+
+## Recommended Architecture & Workflow
+
+Based on your current implementation in `run.py`, `sync_manifest.py`, and `gpu.toml`, here is how to refactor this setup into a production-grade Python package (`pip install modrun`).
+
+```
+                              LOCAL MACHINE                                              MODAL CONTAINER
+ ┌──────────────────────────────────────────────────────────────────┐        ┌───────────────────────────────────────┐
+ │  CLI / SDK Entrypoint ($ modrun --gpu A100 -- python train.py)   │        │   Remote Runner Engine                │
+ │  ─────────────────────────────────────────────────────────────   │        │   ─────────────────────────────────── │
+ │  1. Parse Config (`pyproject.toml` or `modrun.toml`)             │        │   1. Mount Artifact Volume            │
+ │  2. Scan & Hash Source (`sync_manifest.py`)                      │        │   2. Extract Source Bundle            │
+ │  3. Pack In-Memory Zip/Tar Archive                               │        │   3. Set Up Process Group + PTY       │
+ │  4. Invoke Remote Modal App                                      │ ────►  │   4. Execute Subprocess (`train.py`)   │
+ │                                                                  │        │   5. Catch Signals / Harvest Artifacts│
+ │  5. Stream Live Logs / Terminal Output (PTY)                     │ ◄────  │   6. Save to `/artifacts/<run_id>/`   │
+ │  6. Download Artifacts to `runs/<run_id>/`                       │        │                                       │
+ └──────────────────────────────────────────────────────────────────┘        └───────────────────────────────────────┘
+
+```
+
+### 1. Package Structure & Configuration Standard
+
+Move configuration out of custom standalone scripts into standard Python project entrypoints or a dedicated config file.
+
+```text
+modrun/
+├── pyproject.toml              # Build config & entry points ([project.scripts] modrun = "modrun.cli:main")
+├── src/
+│   └── modrun/
+│       ├── __init__.py
+│       ├── cli.py             # CLI parser (Click or Typer recommended)
+│       ├── config.py          # Load configuration (pyproject.toml or modrun.toml)
+│       ├── manifest.py        # File scanning, hashing, and bundle archiving
+│       ├── runner.py          # Local orchestration & signal handlers (Ctrl-C)
+│       └── remote/            # Modal app definitions executed remotely
+│           ├── __init__.py
+│           └── app.py         # Modal @app.function definitions & execution loop
+
+```
+
+* **Config File**: Support a `[tool.modrun]` table inside `pyproject.toml` (or fallback to `modrun.toml`). Avoid requiring custom isolated scripts in root.
+
+### 2. File Synchronization & Upload Engine
+
+* **In-Memory Archiving**: Instead of generating zip files on disk, generate an in-memory `tar.gz` payload or stream file manifests directly using Modal's `modal.Mount` or `modal.Volume`.
+* **Content-Addressed Cache**: Hash local files (`SHA-256`) before sending. Store code assets on a Modal Volume keyed by hash so repeated runs skip uploading unmodified source files.
+
+### 3. Execution, Signal Handling & Artifact Sync
+
+* **Process Grouping & Cleanup**: Keep your current process group model (`os.setpgid`). Upon receiving `SIGINT` (Ctrl-C), forward the signal to the remote process group, wait for the `shutdown_grace_seconds` window, and trigger the artifact save pipeline in a `finally` block before container tear-down.
+* **Artifact Harvesting**: Keep the remote execution isolated from host mounts. The remote worker links designated output paths (e.g., `checkpoints/`, `outputs/`) to `/artifacts/runs/<run-id>/`. Upon completion or handled interruption, the local engine streams these files down sequentially to `runs/<run-id>/`.
+
+---
+
+## Existing Name Check
+
+Before selecting and publishing your package name, keep in mind:
+
+1. **PyPI Availability**: Verify package availability directly on standard indexes:
+* `modrun` / `modexec` — Check on `pypi.org/project/<name>`.
+* `skyrun` / `telecode` — Check on `pypi.org/project/<name>`.
+
+
+2. **PyPI Namespace Rule**: PyPI package names are case-insensitive and treat hyphens (`-`) and underscores (`_`) as equivalent (e.g., `mod-run` and `mod_run` collision conflicts).
+3. **Modal Ecosystem**: Verify your chosen name does not conflict with existing third-party Modal extensions or official `modal-*` plugins on PyPI.
+
+NOTE: we want to use skyrun, having in mind to make project generic, to support more providers
+
+we want to add .modalignore files, which users can provide, so we don't need to hardcode sync patterns in code as we did now:
+
+Modal itself does not have a built-in, automatic `.modalignore` file convention out of the box. However, Modal's SDK provides `modal.FilePatternMatcher.from_file()`, which allows you to load custom ignore files programmatically (similar to a `.dockerignore` or `.gitignore`).
+
+Since you are building your own custom launcher tool on top of Modal (using a script like `sync_manifest.py` as seen in your README), **you can easily add native `.modalignore` support** to your tool's file-scanning and packaging pipeline.
+
+---
+
+### How to Implement `.modalignore` in Your Custom Tool
+
+You can make your `sync_manifest.py` look for a `.modalignore` file in the project root and filter out matching files before building the archive sent to Modal.
+
+#### 1. Add `pathspec` to your dependencies
+
+The easiest way to parse `.gitignore` / `.dockerignore` style syntax in Python is using the `pathspec` library:
+
+```bash
+pip install pathspec
+
+```
+
+#### 2. Update your `sync_manifest.py` to read `.modalignore`
+
+You can check if a `.modalignore` file exists in the project directory, read its patterns, and use them during your file-walking loop:
+
+```python
+from pathlib import Path
+import pathspec
+
+def load_ignore_spec(project_root: Path) -> pathspec.PathSpec:
+    ignore_file = project_root / ".modalignore"
+    patterns = []
+    
+    # Default baseline ignores (hidden files, git directories, caches, etc.)
+    default_ignores = [
+        ".git/",
+        "__pycache__/",
+        "runs/",
+        ".DS_Store",
+    ]
+    patterns.extend(default_ignores)
+
+    # Load user-defined .modalignore if present
+    if ignore_file.is_file():
+        with open(ignore_file, "r") as f:
+            user_patterns = [
+                line.strip() for line in f 
+                if line.strip() and not line.strip().startswith("#")
+            ]
+            patterns.extend(user_patterns)
+
+    return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+
+def should_ignore(file_path: Path, root_dir: Path, spec: pathspec.PathSpec) -> bool:
+    # Get relative path string for matching
+    rel_path = file_path.relative_to(root_dir).as_posix()
+    if file_path.is_dir():
+        rel_path += "/"
+    return spec.match_file(rel_path)
+
+```
+
+#### 3. Create a `.modalignore` file in user projects
+
+Now, users of your tool can place a `.modalignore` file in their project directory just like a `.gitignore`:
+
+```text
+# .modalignore
+data/raw_large_dataset/
+*.ckpt
+outputs/
+.env
+
+```
+
+---
+
+### Native Modal Alternative - IGNORE or ADOPT for us
+
+If you are configuring file mounts or image builds directly via Modal's Python API rather than a custom zip archive, you can use Modal's built-in `FilePatternMatcher`:
+
+```python
+from modal import Image, FilePatternMatcher
+
+# Automatically read exclusion rules from an ignore file
+image = (
+    Image.debian_slim()
+    .add_local_dir(
+        "~/my_project", 
+        remote_path="/app", 
+        ignore=FilePatternMatcher.from_file(".modalignore")
+    )
+)
+
+```
+

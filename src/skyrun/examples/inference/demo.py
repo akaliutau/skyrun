@@ -20,9 +20,7 @@ MODEL_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 
 def command_info(command):
     try:
-        result = subprocess.run(
-            command, capture_output=True, text=True, timeout=15, check=False
-        )
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
         return {
             "returncode": result.returncode,
             "stdout": result.stdout,
@@ -93,8 +91,7 @@ def environment_info():
         "packages": packages,
         # Selected paths only; never dump environment variables or credentials.
         "cache_paths": {
-            key: os.environ.get(key)
-            for key in ("HF_HOME", "TORCH_HOME", "XDG_CACHE_HOME")
+            key: os.environ.get(key) for key in ("HF_HOME", "TORCH_HOME", "XDG_CACHE_HOME")
         },
     }
 
@@ -113,9 +110,7 @@ def main():
     print(json.dumps(info, indent=2), flush=True)
     (args.output_dir / "environment.json").write_text(json.dumps(info, indent=2) + "\n")
     if args.require_cuda and not torch.cuda.is_available():
-        raise RuntimeError(
-            "CUDA was requested but is unavailable; inspect environment.json"
-        )
+        raise RuntimeError("CUDA was requested but is unavailable; inspect environment.json")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     dtype = torch.float16 if device.type == "cuda" else torch.float32
     torch.manual_seed(0)
@@ -135,17 +130,13 @@ def main():
         .eval()
     )
     messages = [{"role": "user", "content": args.prompt}]
-    prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
+    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
     if device.type == "cuda":
         torch.cuda.synchronize()
     loaded = time.monotonic()
     with torch.inference_mode():
-        tokens = model.generate(
-            **inputs, max_new_tokens=args.max_new_tokens, do_sample=False
-        )
+        tokens = model.generate(**inputs, max_new_tokens=args.max_new_tokens, do_sample=False)
     if device.type == "cuda":
         torch.cuda.synchronize()
     generated = tokens[0, inputs["input_ids"].shape[1] :]
@@ -163,9 +154,7 @@ def main():
         "max_new_tokens": args.max_new_tokens,
         "load_seconds": round(loaded - started, 3),
         "inference_seconds": round(time.monotonic() - loaded, 3),
-        "peak_gpu_bytes": torch.cuda.max_memory_allocated()
-        if device.type == "cuda"
-        else None,
+        "peak_gpu_bytes": torch.cuda.max_memory_allocated() if device.type == "cuda" else None,
     }
     print(json.dumps(result, indent=2), flush=True)
     (args.output_dir / "inference.json").write_text(json.dumps(result, indent=2) + "\n")

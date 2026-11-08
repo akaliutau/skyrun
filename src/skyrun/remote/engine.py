@@ -5,18 +5,17 @@ import contextlib
 import errno
 import json
 import os
-import queue
 import selectors
 import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 import traceback
 from pathlib import Path
 
-from sync_manifest import inside, output_paths
+from skyrun.paths import inside, output_paths
+from skyrun.sync import collect_sync
 
 
 def signal_group(process, signum):
@@ -40,24 +39,12 @@ def terminal_pair(columns, rows):
     return master, slave
 
 
-def run_workload(
-    spec, source, workspace, artifacts, cache, *, poll_control=None, emit=None
-):
+def run_workload(spec, source, workspace, artifacts, cache, *, poll_control=None, emit=None):
     """Stream an ordinary subprocess; interrupt it cooperatively before a forced kill."""
-    source, workspace, artifacts, cache = map(
-        Path, (source, workspace, artifacts, cache)
-    )
-    workspace.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, workspace, dirs_exist_ok=True)
+    source, workspace, artifacts, cache = map(Path, (source, workspace, artifacts, cache))
     metadata = artifacts / "_runner"
     metadata.mkdir(parents=True, exist_ok=True)
     cache.mkdir(parents=True, exist_ok=True)
-    for relative in output_paths(spec["output_dirs"]):
-        link = inside(workspace, str(relative))
-        target = inside(artifacts, str(relative))
-        target.mkdir(parents=True, exist_ok=True)
-        link.parent.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(target, target_is_directory=True)
     (metadata / "source.json").write_text(json.dumps(spec["source"], indent=2) + "\n")
     env = dict(os.environ)
     env.update(
@@ -95,6 +82,14 @@ def run_workload(
             result["stream_dropped_bytes"] += len(data)
 
     try:
+        workspace.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, workspace, dirs_exist_ok=True)
+        for relative in output_paths(spec["output_dirs"], allow_empty=True):
+            link = inside(workspace, str(relative))
+            target = inside(artifacts, str(relative))
+            target.mkdir(parents=True, exist_ok=True)
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(target, target_is_directory=True)
         with (
             (metadata / "console.log").open("wb") as log,
             contextlib.ExitStack() as resources,
@@ -140,15 +135,12 @@ def run_workload(
                     next_control_poll = now + 0.25
                 if process.poll() is None:
                     if stop_reason is None and (
-                        command in {"interrupt", "kill"}
-                        or now - started >= spec["timeout_seconds"]
+                        command in {"interrupt", "kill"} or now - started >= spec["timeout_seconds"]
                     ):
                         stop_reason = "canceled" if command else "timed_out"
                         stop_deadline = now + grace
                         signal_group(process, signal.SIGINT)
-                    if command == "kill" or (
-                        stop_deadline is not None and now >= stop_deadline
-                    ):
+                    if command == "kill" or (stop_deadline is not None and now >= stop_deadline):
                         result["forced"] = True
                         signal_group(process, signal.SIGKILL)
                 else:
@@ -191,53 +183,14 @@ def run_workload(
         if emit is None:
             sys.stdout.write(decoder.decode(b"", final=True))
             sys.stdout.flush()
+        try:
+            collect_sync(spec, workspace, artifacts)
+        except (OSError, ValueError) as error:
+            result["sync_error"] = f"{type(error).__name__}: {error}"
+            if result["returncode"] == 0:
+                result.update(status="failed", returncode=1)
+            with (metadata / "console.log").open("ab") as log:
+                log.write(("\nSync harvest failed: " + str(error) + "\n").encode())
         result["elapsed_seconds"] = round(time.monotonic() - started, 3)
         (metadata / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
-
-
-def execute(spec, channel):
-    """The control handshake prevents queued cancellation from starting a workload."""
-    import modal
-
-    cache = modal.Volume.from_name(spec["cache_volume"])
-    artifacts = modal.Volume.from_name(spec["artifact_volume"])
-    channel.put("ready", partition="events")
-    try:
-        try:
-            initial_command = channel.get(timeout=60, partition="commands")
-        except queue.Empty:
-            initial_command = "interrupt"
-
-        def poll_control():
-            if initial_command != "start":
-                return "interrupt"
-            commands = channel.get_many(16, block=False, partition="commands")
-            return (
-                "kill"
-                if "kill" in commands
-                else "interrupt"
-                if "interrupt" in commands
-                else None
-            )
-
-        def emit(data):
-            try:
-                channel.put(data, block=False, partition="output")
-                return True
-            except queue.Full:
-                return False
-
-        with tempfile.TemporaryDirectory(prefix="gpu-starter-") as workspace:
-            return run_workload(
-                spec,
-                "/opt/gpu-starter/project",
-                workspace,
-                Path("/artifacts/runs") / spec["run_id"],
-                "/cache",
-                poll_control=poll_control,
-                emit=emit,
-            )
-    finally:
-        artifacts.commit()
-        cache.commit()

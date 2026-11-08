@@ -1,0 +1,76 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      index:
+        description: Package index
+        type: choice
+        required: true
+        default: testpypi
+        options: [testpypi, pypi]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require a matching version tag for production
+        env:
+          PUBLISH_INDEX: ${{ github.event_name == 'release' && 'pypi' || inputs.index }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          ref = os.environ['GITHUB_REF']
+          if os.environ['PUBLISH_INDEX'] == 'pypi' or ref.startswith('refs/tags/'):
+              expected = 'refs/tags/v' + version
+              if ref != expected:
+                  raise SystemExit(f'Release requires {expected}; got {ref}')
+          PY
+
+  checks:
+    needs: verify-ref
+    uses: ./.github/workflows/ci.yml
+
+  publish-testpypi:
+    if: github.event_name == 'workflow_dispatch' && inputs.index == 'testpypi'
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    if: github.event_name == 'release' || inputs.index == 'pypi'
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

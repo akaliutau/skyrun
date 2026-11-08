@@ -1,16 +1,15 @@
 # Skyrun
 
-**Run ordinary Python projects on cloud compute. Keep your code portable.**
+**Run your projects on cloud compute.**
 
 [![CI](https://github.com/akaliutau/skyrun/actions/workflows/ci.yml/badge.svg)](https://github.com/akaliutau/skyrun/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/akaliutau/skyrun/blob/main/LICENSE)
 
-Skyrun freezes a selected project folder, executes your command on Modal CPU or
+Skyrun allows to smoothly execute your project on Modal CPU or
 GPU compute, streams live terminal output, and downloads saved files. Optional
-bidirectional sync brings selected changes back into your working project while
-protecting concurrent local edits. Your scripts need no Modal imports or runner
-decorators.
+bidirectional sync brings selected changes back into your working project. 
+Your scripts need no Modal imports or runner decorators.
 
 The package exposes a CLI and Python API, with a provider interface for future
 backends. Modal is the first supported provider. Version 0.1.0 is prepared for
@@ -22,22 +21,28 @@ release; use the repository installation until it is published to PyPI.
 
 ## Why Skyrun
 
-- **Portable workloads.** Run the same scripts locally or remotely using ordinary
+- **Run anywhere philosophy.** Run the same scripts locally or remotely using ordinary
   argv commands, sibling imports, and filesystem paths.
-- **Reproducible source.** Inspect exact paths and SHA-256 hashes before launch.
-  Only the chosen project folder is scanned; `.modalignore` controls eligible files.
-- **Efficient transfers.** Immutable source blobs are reused by content hash.
+- **Flexible sourcing.** Only the chosen project folder is scanned; 
+  `.modalignore` controls eligible files, just like `.gitignore`
+- **Lazy and efficient file transfers.** Immutable source files are reused by content hash.
   Artifact downloads stream to disk with atomic file replacement.
-- **Usable terminal output.** Live PTY output supports normal tqdm progress bars,
+- **Remote [machine] is here experience.** Live PTY output supports normal tqdm progress bars,
   carriage returns, Unicode, and cursor movement. Full logs remain available.
 - **Graceful stops.** Ctrl-C signals the workload process group, allows checkpoint
   cleanup, then commits and retrieves saved files. Repeated requests escalate.
 - **Selective round trips.** Explicitly chosen files or directories return to the
   working project with integrity checks and conflict detection.
-- **Extensible infrastructure.** Provider SDKs stay behind adapters. Core config,
+- **Extensible infrastructure - run anywhere.** Provider SDKs stay behind adapters. Core config,
   snapshots, examples, and dry runs work without cloud authentication.
 
-## Quick start
+## Installation I
+
+```bash
+pip install 'skyrun[modal]
+```
+
+## Installation II (from source code)
 
 Use Python 3.11+ and an authenticated Modal account. From this repository:
 
@@ -46,6 +51,14 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[modal]'
 python -m modal setup  # only if this environment is not already authenticated
+```
+
+```bash
+conda create -n skyrun python=3.12 -y
+conda activate skyrun
+pip install -e '.[modal]'
+python -m modal setup  # only if this environment is not already authenticated
+```
 
 skyrun init /tmp/skyrun-hello --example hello
 cd /tmp/skyrun-hello
@@ -53,16 +66,17 @@ skyrun --dry-run
 skyrun run
 ```
 
+## Quick start
+
 The hello example uses CPU and the Python standard library. Expect
 `Hello from skyrun`, exit `0`, and `runs/<run-id>/outputs/hello.json`. Actual runs
 allocate resources in your Modal account; initialization and dry runs are offline.
-After publication, install with `python -m pip install 'skyrun[modal]'`.
 
 For an existing project, run `skyrun init` in its folder, configure its remote
 requirements, inspect uploads, and invoke its normal command:
 
 ```bash
-skyrun run --gpu L4 --timeout 1800 -- python train.py --epochs 5
+skyrun run --gpu T4 --timeout 1800 -- python train.py --epochs 5
 # Select a folder explicitly using configuration stored elsewhere:
 skyrun run --config /path/to/skyrun.toml --project-dir /path/to/project -- python train.py
 ```

@@ -60,6 +60,9 @@ pip install -e '.[modal]'
 python -m modal setup  # only if this environment is not already authenticated
 ```
 
+Generating a sample config, so one can update it for your case:
+
+```bash
 skyrun init /tmp/skyrun-hello --example hello
 cd /tmp/skyrun-hello
 skyrun --dry-run

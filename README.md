@@ -12,8 +12,10 @@ bidirectional sync brings selected changes back into your working project.
 Your scripts need no Modal imports or runner decorators.
 
 The package exposes a CLI and Python API, with a provider interface for future
-backends. Modal is the first supported provider. Version 0.1.0 is prepared for
-release; use the repository installation until it is published to PyPI.
+backends. 
+
+NOTE: this is a community version and supports a limited number if providers (Modal is the first supported provider since 0.1.0).
+Enterprise version supports all neoclouds, AWS/GCP/Azure and custom infra. 
 
 [Quick start](https://github.com/akaliutau/skyrun/blob/main/docs/quickstart.md) · [Examples](https://github.com/akaliutau/skyrun/blob/main/docs/examples.md) ·
 [Configuration](https://github.com/akaliutau/skyrun/blob/main/docs/configuration.md) · [File sync](https://github.com/akaliutau/skyrun/blob/main/docs/synchronization.md) ·

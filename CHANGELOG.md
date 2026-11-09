@@ -3,6 +3,19 @@
 All notable user-facing changes are recorded here. Skyrun uses semantic versions;
 the provider extension contract may evolve between minor releases before 1.0.
 
+## Unreleased
+
+### Fixed
+
+- Concurrent sync clients now hold a local project lock across conflict checks,
+  file replacement, permissions, and reporting, preventing silent overwrites.
+- Source snapshots use the same lock so they cannot copy a partially applied
+  sync. Cloud execution and artifact downloads remain parallel.
+- Windows lock metadata is excluded from source uploads and sync selections.
+- Added independent-process regressions for concurrent writers, snapshot/sync
+  coordination, lock release after exceptions or process termination, and
+  independence between projects.
+
 ## 0.1.0 — Unreleased
 
 ### Added

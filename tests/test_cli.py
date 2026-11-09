@@ -45,6 +45,26 @@ def test_configuration_only_init_preserves_existing_code(tmp_path):
     assert (tmp_path / "skyrun.toml").is_file()
 
 
+def test_example_initialization_does_not_copy_internal_lock(tmp_path, monkeypatch):
+    resource_root = tmp_path / "examples"
+    example = resource_root / "hello"
+    example.mkdir(parents=True)
+    for name, content in {
+        "skyrun.toml": "",
+        ".modalignore": "",
+        "main.py": "print('hello')\n",
+        ".SKYRUN.LOCK": "internal lock",
+    }.items():
+        (example / name).write_text(content)
+    monkeypatch.setattr("skyrun.cli.files", lambda package: resource_root)
+    destination = init_project(tmp_path / "initialized", example="hello")
+    assert {path.name for path in destination.iterdir()} == {
+        "skyrun.toml",
+        ".modalignore",
+        "main.py",
+    }
+
+
 def test_module_cli_from_another_working_directory(tmp_path):
     project = init_project(tmp_path / "training", example="training")
     elsewhere = tmp_path / "elsewhere"

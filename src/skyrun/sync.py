@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from skyrun.errors import SyncConflict
+from skyrun.locking import project_lock
 from skyrun.manifest import (
     IgnorePolicy,
     file_hash,
@@ -100,6 +101,12 @@ def apply_sync(project, run_directory, *, conflict="error", selections=None):
         _metadata(metadata)
     for relative in manifest["deleted"]:
         _path_in_selection(relative, manifest["selected"])
+    with project_lock(project):
+        return _apply_sync(project, run_directory, manifest, conflict=conflict)
+
+
+def _apply_sync(project, run_directory, manifest, *, conflict):
+    """Keep the full preflight, writes, modes, and report under one project lock."""
     project = checked_root(project)
     plan, conflicts, seen, blocked = [], [], set(), []
     for entry in manifest["files"]:

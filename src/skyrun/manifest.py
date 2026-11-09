@@ -13,7 +13,8 @@ from pathlib import Path, PurePosixPath
 import pathspec
 
 from skyrun.config import Config
-from skyrun.paths import RESERVED, checked_root, inside
+from skyrun.locking import project_lock
+from skyrun.paths import PROJECT_LOCK_NAME, RESERVED, checked_root, inside
 
 CHUNK_SIZE = 1024 * 1024
 
@@ -30,7 +31,11 @@ def selected(path, selections):
 
 def structural_exclusion(relative):
     parts = PurePosixPath(relative).parts
-    return ".git" in parts or parts[0] in RESERVED
+    return (
+        ".git" in parts
+        or parts[0] in RESERVED
+        or any(part.casefold() == PROJECT_LOCK_NAME for part in parts)
+    )
 
 
 class IgnorePolicy:
@@ -146,13 +151,19 @@ class Snapshot:
 
 
 def snapshot(config: Config, destination, *, exclude_roots=()) -> Snapshot:
-    destination = checked_root(destination)
-    destination.mkdir(parents=True, exist_ok=True)
+    """Freeze the project without observing a partially applied Skyrun sync."""
     project = config.project
     if ".git" in project.parts:
         raise ValueError("project_dir cannot select a Git metadata directory")
     if not project.is_dir():
         raise ValueError(f"project directory does not exist: {project}")
+    with project_lock(project):
+        return _snapshot(config, project, destination, exclude_roots=exclude_roots)
+
+
+def _snapshot(config, project, destination, *, exclude_roots):
+    destination = checked_root(destination)
+    destination.mkdir(parents=True, exist_ok=True)
     policy = IgnorePolicy.load(project, config["sync"]["ignore_file"])
     excluded = list(config["sync"]["output_dirs"])
     local = inside(config.root, config["sync"]["local_dir"], allow_hidden=True)

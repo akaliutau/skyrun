@@ -13,7 +13,7 @@ from skyrun import __version__
 from skyrun.config import load_config
 from skyrun.errors import ConfigError, SyncConflict
 from skyrun.manifest import snapshot
-from skyrun.paths import atomic_write, checked_root
+from skyrun.paths import PROJECT_LOCK_NAME, atomic_write, checked_root
 from skyrun.runner import download, make_spec, run
 
 
@@ -50,7 +50,9 @@ def init_project(destination, *, example=None):
         names.extend(
             name.name
             for name in resource.iterdir()
-            if name.name not in {*names, "__init__.py", "__pycache__"} and name.is_file()
+            if name.name not in {*names, "__init__.py", "__pycache__"}
+            and name.name.casefold() != PROJECT_LOCK_NAME
+            and name.is_file()
         )
     payloads = {name: resource.joinpath(name).read_bytes() for name in names}
     for name in payloads:

@@ -24,7 +24,7 @@ in gitignore. To reinclude a file beneath an ignored directory, first reinclude
 the directory. `data/*` followed by `!data/keep.csv` works; `data/` prunes the
 directory until it is explicitly reincluded.
 
-Symlinks, `.git` directories, reserved `_runner`/`_sync` paths, and configured
+Symlinks, `.git` directories, reserved `_runner`/`_sync`/`.skyrun.lock` paths, and configured
 output directories are structural exclusions. Ignore negation cannot enable
 them. The selected project root and local download parents cannot be symlinks.
 Ordinary non-hidden project files are inputs; keep private material outside the
@@ -98,6 +98,22 @@ Known conflicts are checked before applying any files. Each replacement rechecks
 the local version; the overall operation is not a filesystem-wide transaction.
 Pause local editing while applying recovered changes.
 
+Skyrun takes a local OS lock on the project during source copying and throughout
+sync preflight, file replacement, permissions, and reporting. Cooperating clients
+on the same machine using the same project directory serialize these operations.
+If two jobs start from the same
+baseline and return different changes to the same file, the first application
+succeeds and the next reports a conflict under the default policy. Cloud jobs
+and artifact downloads remain parallel; the lock is not held while they run.
+
+On POSIX systems the directory itself is locked, without creating a file or
+requiring a writable source folder. On Windows a persistent `.skyrun.lock` file
+coordinates clients and is excluded from uploads and synchronization even when
+ignore rules reinclude hidden files. Keep that file in place while clients run.
+The OS releases the lock on normal completion, exceptions, and process exit.
+These are advisory locks on a local filesystem: ordinary editors and other
+programs do not participate, so the per-file hash checks remain in place.
+
 Resolve a conflict manually or choose an explicit policy:
 
 ```bash
@@ -148,4 +164,6 @@ Source blobs, model caches, and artifacts persist until removed through Modal's
 Volume tools; Skyrun does not delete them automatically. Use distinct application
 and Volume names for unrelated projects. Modal's
 [Volume consistency model](https://modal.com/docs/guide/volumes) governs visibility
-and concurrent writers; avoid concurrent writes to the same project files.
+and concurrent writers; avoid simultaneous writes to the same remote file. The
+project lock does not provide distributed locking for the shared model cache or
+other mutable data on a Modal Volume.

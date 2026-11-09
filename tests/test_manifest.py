@@ -140,3 +140,13 @@ def test_git_metadata_cannot_be_selected_as_project_root(config_factory, project
     put(project, ".git/config", "private Git configuration")
     with pytest.raises(ValueError, match="Git metadata"):
         snapshot(config_factory({"sync": {"project_dir": ".git"}}), tmp_path / "snapshot")
+
+
+@pytest.mark.parametrize("name", [".skyrun.lock", ".SKYRUN.LOCK", "nested/.skyrun.lock"])
+def test_internal_lock_cannot_be_uploaded_by_ignore_negation(
+    config_factory, project, tmp_path, name
+):
+    put(project, name, "internal lock")
+    put(project, ".modalignore", f"!{name}\n")
+    frozen = snapshot(config_factory(), tmp_path / "snapshot")
+    assert [entry["path"] for entry in frozen.manifest["files"]] == ["main.py"]

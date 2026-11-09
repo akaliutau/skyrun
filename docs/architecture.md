@@ -50,6 +50,7 @@ regular local files. See [sync semantics](synchronization.md).
 | --- | --- |
 | `config.py` | Discovery, typed config container, defaults, validation |
 | `manifest.py` | Ignore policy, bounded staging, file modes, hashes, deterministic bundles |
+| `locking.py` | Local OS project lock shared by source snapshots and sync application |
 | `runner.py` | Provider-neutral orchestration, run records, Python API |
 | `providers/` | Adapter protocol, entry-point discovery, optional Modal implementation |
 | `remote/engine.py` | POSIX subprocess, PTY/pipes, process-group cleanup, harvest |

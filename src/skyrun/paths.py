@@ -5,7 +5,8 @@ import re
 import tempfile
 from pathlib import Path, PurePosixPath
 
-RESERVED = {"_runner", "_sync"}
+PROJECT_LOCK_NAME = ".skyrun.lock"
+RESERVED = {"_runner", "_sync", PROJECT_LOCK_NAME}
 
 
 def relative_path(value, *, allow_hidden=False):
@@ -44,8 +45,10 @@ def output_paths(values, *, allow_empty=False, allow_hidden=False):
         raise ValueError("sync.output_dirs must be a list of directory paths")
     paths = [relative_path(value, allow_hidden=allow_hidden) for value in values]
     for index, path in enumerate(paths):
-        if path.parts[0] in RESERVED:
-            raise ValueError("_runner and _sync are reserved for run metadata")
+        if path.parts[0] in RESERVED or any(
+            part.casefold() == PROJECT_LOCK_NAME for part in path.parts
+        ):
+            raise ValueError("_runner, _sync, and .skyrun.lock are reserved for Skyrun metadata")
         for other in paths[:index]:
             if path == other or path in other.parents or other in path.parents:
                 raise ValueError("selected paths must be distinct and cannot overlap")

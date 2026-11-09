@@ -14,6 +14,7 @@ RUNTIME_FILES = (
     "__init__.py",
     "errors.py",
     "paths.py",
+    "locking.py",
     "config.py",
     "manifest.py",
     "sync.py",

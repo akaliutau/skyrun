@@ -7,7 +7,7 @@ the provider extension contract may evolve between minor releases before 1.0.
 
 | Skyrun | Modal SDK | Status |
 | --- | --- | --- |
-| 0.1.9 (unreleased) | 1.3.1–1.3.5, 1.4.3, 1.5.5, 1.6.3 | Offline regression suite checked against each listed SDK version |
+| 0.1.9 | 1.3.1–1.3.5, 1.4.3, 1.5.5, 1.6.3 | Offline regression suite checked against each listed SDK version |
 | 0.1.6–0.1.8 | 1.3.1–1.3.5 | Declared dependency range excludes Modal 1.4+ |
 | 0.1.3–0.1.5 | 1.3.1 | Known working baseline; pin Modal when using these releases |
 

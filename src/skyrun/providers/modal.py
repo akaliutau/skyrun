@@ -3,6 +3,7 @@
 import contextlib
 import json
 from importlib.metadata import version
+from inspect import signature
 from pathlib import Path, PurePosixPath
 
 from skyrun.errors import ConfigError
@@ -33,6 +34,19 @@ def sdk():
             "Modal support is not installed; run: python -m pip install 'skyrun[modal]'"
         ) from error
     return modal
+
+
+@contextlib.contextmanager
+def _quiet_output(modal):
+    """Suppress SDK progress without interfering with Skyrun's raw output stream."""
+    options = {}
+    if "show_progress" in signature(modal.enable_output).parameters:
+        options["show_progress"] = False
+    with modal.enable_output(**options) as output:
+        # Modal 1.3.3+ moved this setting to the yielded OutputManager.
+        if output is not None:
+            output.set_quiet_mode(True)
+        yield
 
 
 def upload_source(volume, source):
@@ -152,7 +166,7 @@ class ModalProvider:
         )(execute)
         result = None
         with (
-            modal.enable_output(show_progress=False),
+            _quiet_output(modal),
             app.run(environment_name=environment),
             modal.Queue.ephemeral(environment_name=environment) as channel,
             StopRequests() as stops,

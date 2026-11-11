@@ -71,6 +71,26 @@ skyrun --dry-run
 skyrun run
 ```
 
+## Modal compatibility
+
+| Skyrun | Modal SDK | Status |
+| --- | --- | --- |
+| 0.1.6 (unreleased) | 1.3.1–1.3.5 | Offline regression suite checked against each SDK version |
+| 0.1.3–0.1.5 | 1.3.1 | Known working baseline; pin Modal when using these releases |
+
+The Modal extra supports `modal>=1.3.1,<1.4`. Modal 1.3.3–1.3.5 removed the
+`show_progress` argument used by older Skyrun releases. Skyrun 0.1.6 supports both
+output APIs, keeping Modal's progress display quiet while preserving live raw
+workload output, terminal progress bars, Ctrl-C handling, and artifact downloads.
+The checks above are offline; they do not allocate cloud compute. See the
+[release notes](CHANGELOG.md) for details.
+
+For Skyrun 0.1.3–0.1.5, pin the SDK in the same Python environment:
+
+```bash
+python -m pip install 'modal==1.3.1'
+```
+
 ## Quick start
 
 The hello example uses CPU and the Python standard library. Expect

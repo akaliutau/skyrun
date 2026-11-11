@@ -62,7 +62,8 @@ class RecordingSDK:
     def run(self, **kwargs):
         return contextlib.nullcontext()
 
-    def enable_output(self, **kwargs):
+    def enable_output(self, *, show_progress):
+        assert show_progress is False
         return contextlib.nullcontext()
 
 
@@ -121,14 +122,59 @@ def test_provider_resource_settings_and_call_record(config_factory, tmp_path, mo
     assert not sdk.canceled
 
 
+def test_provider_with_real_modal_output_streams_raw_workload(
+    config_factory, tmp_path, monkeypatch, capsys
+):
+    modal = pytest.importorskip("modal")
+    config = config_factory()
+    source = snapshot(config, tmp_path / "snapshot")
+    spec = make_spec(config, source, "test-run")
+    sdk = RecordingSDK()
+    sdk.enable_output = modal.enable_output
+    raw = "step 1/2\r\x1b[2Kstep 2/2 🙂".encode()
+    partitions = {"events": ["ready"], "output": [raw[:25], raw[25:]]}
+    commands = []
+    channel = SimpleNamespace(
+        get_many=lambda n, **kwargs: partitions.pop(kwargs["partition"], []),
+        put=lambda value, **kwargs: commands.append((kwargs["partition"], value)),
+    )
+    sdk.Queue.ephemeral = lambda **kwargs: contextlib.nullcontext(channel)
+
+    def get_result(*, timeout):
+        if hasattr(modal.output, "OutputManager"):
+            manager = modal.output.OutputManager.get()
+            assert not manager.is_enabled
+            manager.print("Modal status must stay quiet")
+        return {"returncode": 0}
+
+    sdk.call.get = get_result
+    monkeypatch.setattr(backend, "sdk", lambda: sdk)
+    monkeypatch.setattr(backend, "upload_source", lambda *args: 0)
+    result = backend.ModalProvider().run(config, source, spec, tmp_path / "run")
+    assert result == {"returncode": 0}
+    assert commands == [("commands", "start")]
+    output = capsys.readouterr().out
+    assert output.endswith(raw.decode())
+    assert "Modal status must stay quiet" not in output
+    assert not sdk.canceled
+
+
 @pytest.mark.parametrize("error", [KeyboardInterrupt, TimeoutError])
+@pytest.mark.parametrize("real_output", [False, True])
 def test_emergency_or_transport_failure_cancels_and_leaves_record(
-    config_factory, tmp_path, monkeypatch, error
+    config_factory, tmp_path, monkeypatch, error, real_output
 ):
     config = config_factory()
     source = snapshot(config, tmp_path / "snapshot")
     spec = make_spec(config, source, "test-run")
     sdk = RecordingSDK()
+    manager_type = None
+    if real_output:
+        modal = pytest.importorskip("modal")
+        sdk.enable_output = modal.enable_output
+        manager_type = getattr(modal.output, "OutputManager", None)
+        if manager_type is not None:
+            previous_manager = manager_type.get()
     monkeypatch.setattr(backend, "sdk", lambda: sdk)
     monkeypatch.setattr(backend, "upload_source", lambda *args: 0)
 
@@ -141,6 +187,8 @@ def test_emergency_or_transport_failure_cancels_and_leaves_record(
         backend.ModalProvider().run(config, source, spec, destination)
     assert sdk.canceled
     assert (destination / "interrupted.json").is_file()
+    if manager_type is not None:
+        assert manager_type.get() is previous_manager
 
 
 def test_missing_modal_dependency_gives_install_command(monkeypatch):

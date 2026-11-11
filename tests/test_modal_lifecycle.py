@@ -1,5 +1,6 @@
 import contextlib
 from types import SimpleNamespace
+from unittest.mock import create_autospec
 
 import pytest
 
@@ -122,15 +123,26 @@ def test_provider_resource_settings_and_call_record(config_factory, tmp_path, mo
     assert not sdk.canceled
 
 
+@pytest.mark.parametrize(("gpu", "base_image"), [("cpu", None), ("T4", "python:3.11-slim")])
 def test_provider_with_real_modal_output_streams_raw_workload(
-    config_factory, tmp_path, monkeypatch, capsys
+    config_factory, project, tmp_path, monkeypatch, capsys, gpu, base_image
 ):
     modal = pytest.importorskip("modal")
-    config = config_factory()
+    (project / "requirements.txt").write_text("packaging==25.0\n")
+    config = config_factory(
+        {
+            "run": {"gpu": gpu},
+            "image": {
+                "base_image": base_image,
+                "requirements": "requirements.txt",
+                "apt_packages": ["git"],
+                "pip_packages": ["typing-extensions==4.15.0"],
+            },
+            "modal": {"environment_name": "dev", "secrets": ["training-secret"]},
+        }
+    )
     source = snapshot(config, tmp_path / "snapshot")
     spec = make_spec(config, source, "test-run")
-    sdk = RecordingSDK()
-    sdk.enable_output = modal.enable_output
     raw = "step 1/2\r\x1b[2Kstep 2/2 🙂".encode()
     partitions = {"events": ["ready"], "output": [raw[:25], raw[25:]]}
     commands = []
@@ -138,7 +150,23 @@ def test_provider_with_real_modal_output_streams_raw_workload(
         get_many=lambda n, **kwargs: partitions.pop(kwargs["partition"], []),
         put=lambda value, **kwargs: commands.append((kwargs["partition"], value)),
     )
-    sdk.Queue.ephemeral = lambda **kwargs: contextlib.nullcontext(channel)
+    call = create_autospec(modal.FunctionCall, instance=True)
+    call.object_id = "fc-test"
+    # Use real SDK image, Volume, Secret, and Function definitions. Replace only
+    # operations that would contact Modal, retaining their SDK signatures.
+    monkeypatch.setattr(
+        modal.App,
+        "run",
+        create_autospec(modal.App.run, return_value=contextlib.nullcontext()),
+    )
+    monkeypatch.setattr(
+        modal.Queue,
+        "ephemeral",
+        create_autospec(modal.Queue.ephemeral, return_value=contextlib.nullcontext(channel)),
+    )
+    monkeypatch.setattr(
+        modal.Function, "spawn", create_autospec(modal.Function.spawn, return_value=call)
+    )
 
     def get_result(*, timeout):
         if hasattr(modal.output, "OutputManager"):
@@ -147,8 +175,7 @@ def test_provider_with_real_modal_output_streams_raw_workload(
             manager.print("Modal status must stay quiet")
         return {"returncode": 0}
 
-    sdk.call.get = get_result
-    monkeypatch.setattr(backend, "sdk", lambda: sdk)
+    call.get.side_effect = get_result
     monkeypatch.setattr(backend, "upload_source", lambda *args: 0)
     result = backend.ModalProvider().run(config, source, spec, tmp_path / "run")
     assert result == {"returncode": 0}
@@ -156,7 +183,7 @@ def test_provider_with_real_modal_output_streams_raw_workload(
     output = capsys.readouterr().out
     assert output.endswith(raw.decode())
     assert "Modal status must stay quiet" not in output
-    assert not sdk.canceled
+    call.cancel.assert_not_called()
 
 
 @pytest.mark.parametrize("error", [KeyboardInterrupt, TimeoutError])
@@ -172,6 +199,7 @@ def test_emergency_or_transport_failure_cancels_and_leaves_record(
     if real_output:
         modal = pytest.importorskip("modal")
         sdk.enable_output = modal.enable_output
+        sdk.output = modal.output
         manager_type = getattr(modal.output, "OutputManager", None)
         if manager_type is not None:
             previous_manager = manager_type.get()

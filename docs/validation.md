@@ -47,11 +47,12 @@ PTY/pipes, carriage returns, split Unicode, full logs under backpressure, ordina
 failure, missing executables, graceful SIGINT saves, forced kills, timeout cleanup,
 pre-start cancellation, and descendant cleanup.
 
-Provider transport tests use fakes at the cloud boundary and exercise the installed
-Modal SDK's real output context to check quiet progress display and raw workload
-streaming. The complete local orchestrator is also exercised with real subprocess
-execution and local artifact transport. These checks do not establish that a
-particular Modal deployment, GPU,
+Provider transport tests exercise the installed Modal SDK's real image, Volume,
+Secret, and Function definitions for CPU and T4 configurations, along with its real
+output context to check quiet progress display and raw workload streaming. Cloud
+operations are replaced with SDK-signature-checked mocks. The complete local
+orchestrator is also exercised with real subprocess execution and local artifact
+transport. These checks do not establish that a particular Modal deployment, GPU,
 image build, or network path works; that requires the following live checks.
 
 ## Distribution validation
@@ -62,10 +63,11 @@ python -m twine check --strict dist/*
 python tools/check_dist.py
 ```
 
-CI runs the offline suite on Python 3.11–3.14 with the latest allowed Modal 1.3 SDK
-and checks Modal 1.3.1–1.3.4 separately on Python 3.12. It checks style, builds both
-package formats, and installs the wheel into a clean environment to verify the CLI,
-packaged policies, and sample initialization without Modal installed.
+CI runs the offline suite on Python 3.11–3.14 with the latest allowed Modal 1.6 SDK.
+It also checks Modal 1.3.1–1.3.5, the latest 1.4 and 1.5 SDKs, and exactly 1.6.3 on
+Python 3.12. It checks style, builds both package formats, and installs the wheel
+into a clean environment to verify the CLI, packaged policies, and sample
+initialization without Modal installed.
 
 ## Live Modal CPU smoke
 

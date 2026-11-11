@@ -75,14 +75,17 @@ skyrun run
 
 | Skyrun | Modal SDK | Status |
 | --- | --- | --- |
-| 0.1.8 | 1.3.1–1.3.5 | Offline regression suite checked against each SDK version |
+| 0.1.9 (unreleased) | 1.3.1–1.3.5, 1.4.3, 1.5.5, 1.6.3 | Offline regression suite checked against each listed SDK version |
+| 0.1.6–0.1.8 | 1.3.1–1.3.5 | Declared dependency range excludes Modal 1.4+ |
 | 0.1.3–0.1.5 | 1.3.1 | Known working baseline; pin Modal when using these releases |
 
-The Modal extra supports `modal>=1.3.1,<1.4`. Modal 1.3.3–1.3.5 removed the
-`show_progress` argument used by older Skyrun releases. Skyrun 0.1.6 supports both
-output APIs, keeping Modal's progress display quiet while preserving live raw
-workload output, terminal progress bars, Ctrl-C handling, and artifact downloads.
-The checks above are offline; they do not allocate cloud compute. See the
+Starting with Skyrun 0.1.9, the Modal extra supports `modal>=1.3.1,<1.7`.
+The adapter handles both the legacy `show_progress` argument and newer SDKs where
+`enable_output()` no longer yields an output manager. Modal's progress display
+stays quiet while Skyrun preserves live raw workload output, terminal progress
+bars, Ctrl-C handling, and artifact downloads. The checks above use real SDK
+image/function definitions and output management with cloud operations replaced;
+live deployment and GPU behavior require separate validation. See the
 [release notes](CHANGELOG.md) for details.
 
 For Skyrun 0.1.3–0.1.5, pin the SDK in the same Python environment:

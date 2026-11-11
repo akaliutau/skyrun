@@ -39,13 +39,12 @@ def sdk():
 @contextlib.contextmanager
 def _quiet_output(modal):
     """Suppress SDK progress without interfering with Skyrun's raw output stream."""
-    options = {}
-    if "show_progress" in signature(modal.enable_output).parameters:
-        options["show_progress"] = False
-    with modal.enable_output(**options) as output:
-        # Modal 1.3.3+ moved this setting to the yielded OutputManager.
-        if output is not None:
-            output.set_quiet_mode(True)
+    legacy = "show_progress" in signature(modal.enable_output).parameters
+    options = {"show_progress": False} if legacy else {}
+    with modal.enable_output(**options):
+        # Newer SDKs expose the active manager but do not necessarily yield it.
+        if not legacy:
+            modal.output.OutputManager.get().set_quiet_mode(True)
         yield
 
 

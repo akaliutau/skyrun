@@ -151,7 +151,7 @@ mixing project resolution across indexes:
 ```bash
 python -m venv /tmp/skyrun-testpypi
 source /tmp/skyrun-testpypi/bin/activate
-python -m pip install 'pathspec>=0.12.1,<2' 'modal>=1.3.1,<1.4'
+python -m pip install 'pathspec>=0.12.1,<2' 'modal>=1.3.1,<1.7'
 python -m pip install --index-url https://test.pypi.org/simple/ --no-deps 'skyrun==0.1.0'
 skyrun --version
 skyrun init /tmp/skyrun-installed-example --example hello

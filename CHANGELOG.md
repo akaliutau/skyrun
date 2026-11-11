@@ -7,14 +7,35 @@ the provider extension contract may evolve between minor releases before 1.0.
 
 | Skyrun | Modal SDK | Status |
 | --- | --- | --- |
-| 0.1.8 | 1.3.1–1.3.5 | Offline regression suite checked against each SDK version |
+| 0.1.9 (unreleased) | 1.3.1–1.3.5, 1.4.3, 1.5.5, 1.6.3 | Offline regression suite checked against each listed SDK version |
+| 0.1.6–0.1.8 | 1.3.1–1.3.5 | Declared dependency range excludes Modal 1.4+ |
 | 0.1.3–0.1.5 | 1.3.1 | Known working baseline; pin Modal when using these releases |
 
-The Modal extra supports `modal>=1.3.1,<1.4`. Skyrun 0.1.3–0.1.5 fails with
-Modal 1.3.3–1.3.5 because those SDKs removed `enable_output(show_progress=...)`.
+Starting with Skyrun 0.1.9, the Modal extra supports `modal>=1.3.1,<1.7`.
+Skyrun 0.1.3–0.1.5 fails with Modal 1.3.3–1.3.5 because those SDKs removed
+`enable_output(show_progress=...)`.
 For those Skyrun releases, `python -m pip install 'modal==1.3.1'` is the workaround.
-The 0.1.6 compatibility checks use the installed SDK without cloud credentials or
+The compatibility checks use the installed SDK without cloud credentials or
 compute; they do not establish live deployment or GPU validation for every pair.
+
+## 0.1.9 — Unreleased
+
+### Fixed
+
+- Quiet SDK output on Modal 1.6.3, whose `enable_output()` context no longer yields
+  an output manager. Skyrun now uses the public `modal.output.OutputManager.get()`
+  accessor inside the context, keeping Modal's progress display quiet while
+  preserving raw workload output and terminal progress bars.
+- Expanded the Modal extra from `>=1.3.1,<1.4` to `>=1.3.1,<1.7`, allowing Modal
+  1.6.3 while retaining the legacy output API path for older SDKs.
+
+### Added
+
+- Offline checks using real SDK image, Volume, Secret, and Function definitions
+  for CPU and T4 configurations, with cloud operations replaced. Coverage retains
+  raw streaming, interruption cleanup, output-manager restoration, and recovery.
+- CI checks for Modal 1.6.3 and the latest 1.6 SDK, plus representative 1.4 and 1.5
+  SDKs and the existing 1.3.1–1.3.5 compatibility checks.
 
 ## 0.1.6 — Unreleased
 

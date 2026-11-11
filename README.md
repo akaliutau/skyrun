@@ -75,7 +75,7 @@ skyrun run
 
 | Skyrun | Modal SDK | Status |
 | --- | --- | --- |
-| 0.1.6 (unreleased) | 1.3.1–1.3.5 | Offline regression suite checked against each SDK version |
+| 0.1.8 | 1.3.1–1.3.5 | Offline regression suite checked against each SDK version |
 | 0.1.3–0.1.5 | 1.3.1 | Known working baseline; pin Modal when using these releases |
 
 The Modal extra supports `modal>=1.3.1,<1.4`. Modal 1.3.3–1.3.5 removed the
